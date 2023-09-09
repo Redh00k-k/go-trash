@@ -1,1 +1,1 @@
-# go-tash
+# go-trash
