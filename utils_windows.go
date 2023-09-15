@@ -4,6 +4,12 @@ import (
 	"syscall"
 	"unsafe"
 
+	/*
+		#cgo LDFLAGS: -Llib -ltrashbox -lOle32 -lstdc++ -static
+		#include "lib/trashbox.h"
+	*/
+	"C"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -53,6 +59,11 @@ type SHFILEOPSTRUCT struct {
 	AnyOperationsAborted int32
 	NameMappings         *byte
 	ProgressTitle        *uint16
+}
+
+func PrintTrashBoxItems() (ret int) {
+	ret = int(C.PrintTrashBox())
+	return
 }
 
 func _SHFileOperation(
