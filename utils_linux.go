@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -13,6 +15,51 @@ import (
 type Info struct {
 	path         string
 	deletionDate time.Time
+}
+
+func PrintTrashBoxItems() (ret int) {
+	user, err := user.Current()
+	if err != nil {
+		fmt.Errorf("Failure to get user's home directory: %s", err)
+		return 1
+	}
+
+	// Contents of a trash directory
+	// https://specifications.freedesktop.org/trash-spec/trashspec-1.0.html
+	trashBase := strings.Replace("~/.local/share/Trash", "~", user.HomeDir, 1)
+	files, err := filepath.Glob(trashBase + "/info/*")
+	if err != nil {
+		return 1
+	}
+
+	for _, fullpath := range files {
+		f, err := os.Open(fullpath)
+		if err != nil {
+			fmt.Printf("Failure to open file: %s", err)
+			continue
+		}
+		defer f.Close()
+
+		// Read one line at a time, as the order of 'Path' and 'DeletionDate' may be different
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := scanner.Text()
+			pl := strings.Split(line, "Path=")
+			if len(pl) < 2 {
+				continue
+			}
+
+			decodedFilePath, err := url.QueryUnescape(pl[1])
+			if err != nil {
+				fmt.Errorf("Failure to decode: %s", err)
+				break
+			}
+			fmt.Println(decodedFilePath)
+			break
+		}
+	}
+
+	return 0
 }
 
 func convertTrashInfo(i Info) string {
