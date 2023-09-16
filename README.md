@@ -13,7 +13,7 @@ Usage: go-trash.exe [-hl] [parameters ...]
 ### Trash
 * Windows
 ```
-C:\Users\user\Desktop> trash aaa.txt bbb_dir
+C:\Users\user\Desktop> go-trash.exe aaa.txt bbb_dir
 ```
 
 * Linux
@@ -24,7 +24,7 @@ C:\Users\user\Desktop> trash aaa.txt bbb_dir
 ### Print list trashed files
 * Windows
 ```
-C:\Users\user\Desktop> trash -l
+C:\Users\user\Desktop> go-trash.exe -l
 
 # Trash Box #
 C:\Users\user\Desktop\aaa.txt
@@ -34,6 +34,8 @@ C:\Users\user\Desktop\bbb_dir
 * Linux
 ```
 ~$ go-trash -l
+
+# Trash Box #
 /home/user/aaa.txt
 /home/user/bbb_dir
 ```
