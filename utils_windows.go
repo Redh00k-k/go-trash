@@ -5,7 +5,7 @@ import (
 	"unsafe"
 
 	/*
-		#cgo LDFLAGS: -Llib -ltrashbox -lOle32 -lstdc++ -static
+		#cgo LDFLAGS: -Llib -ltrashbox -lOle32 -lOleAut32 -lShlwapi -luuid -lpropsys -lstdc++ -static
 		#include "lib/trashbox.h"
 	*/
 	"C"
