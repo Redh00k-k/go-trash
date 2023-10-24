@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -15,6 +17,24 @@ import (
 type Info struct {
 	path         string
 	deletionDate time.Time
+}
+
+func parseLine(line string, delimiter string) []string {
+	pl := strings.Split(line, delimiter)
+	return pl
+}
+
+func decodeLine(pl []string) string {
+	decodedFilePath, err := url.QueryUnescape(pl[1])
+	if err != nil {
+		fmt.Errorf("Failure to decode: %s", err)
+		return ""
+	}
+	return decodedFilePath
+}
+
+func printDisplayName(line string, label string) {
+	fmt.Printf("%s\t: %s\n", label, line)
 }
 
 func PrintTrashBoxItems() (ret int) {
@@ -27,36 +47,57 @@ func PrintTrashBoxItems() (ret int) {
 	// Contents of a trash directory
 	// https://specifications.freedesktop.org/trash-spec/trashspec-1.0.html
 	trashBase := strings.Replace("~/.local/share/Trash", "~", user.HomeDir, 1)
-	files, err := filepath.Glob(trashBase + "/info/*")
+
+	// Generate fullPath from .~/.local/share/Trash/files/
+	allFiles, err := ioutil.ReadDir(trashBase + "/files/")
 	if err != nil {
+		fmt.Errorf("Failure to get files in ~/.local/share/Trash : %s", err)
 		return 1
 	}
 
-	for _, fullpath := range files {
-		f, err := os.Open(fullpath)
+	for _, file := range allFiles {
+		infoFilePath := trashBase + "/info/" + file.Name() + ".trashinfo"
+		filesFilePath := trashBase + "/files/" + file.Name()
+
+		iFile, err := os.Open(infoFilePath)
 		if err != nil {
 			fmt.Printf("Failure to open file: %s", err)
 			continue
 		}
-		defer f.Close()
+		defer iFile.Close()
 
+		fFile, err := os.Open(filesFilePath)
+		if err != nil {
+			fmt.Printf("Failure to open file: %s", err)
+			continue
+		}
+		defer fFile.Close()
+
+		var decodedFilePath string
+		var deletedDate string
 		// Read one line at a time, as the order of 'Path' and 'DeletionDate' may be different
-		scanner := bufio.NewScanner(f)
+		scanner := bufio.NewScanner(iFile)
 		for scanner.Scan() {
 			line := scanner.Text()
-			pl := strings.Split(line, "Path=")
-			if len(pl) < 2 {
+			if pl := parseLine(line, "Path="); len(pl) > 1 {
+				decodedFilePath, _ = url.QueryUnescape(pl[1])
+			} else if pl := parseLine(line, "DeletionDate="); len(pl) > 1 {
+				deletedDate = pl[1]
+			} else {
+				// "[Trash Info]"
 				continue
 			}
-
-			decodedFilePath, err := url.QueryUnescape(pl[1])
-			if err != nil {
-				fmt.Errorf("Failure to decode: %s", err)
-				break
-			}
-			fmt.Println(decodedFilePath)
-			break
 		}
+		fi, err := fFile.Stat()
+		if err != nil {
+			fmt.Printf("Failure to open file: %s", err)
+		}
+
+		fmt.Println()
+		printDisplayName(filepath.Base(decodedFilePath), "FileName")
+		printDisplayName(decodedFilePath, "Location")
+		printDisplayName(deletedDate, "DeletedDate")
+		printDisplayName(strconv.FormatInt(fi.Size(), 10), "Size\t")
 	}
 
 	return 0
