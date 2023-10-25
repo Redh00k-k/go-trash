@@ -27,8 +27,18 @@ C:\Users\user\Desktop> go-trash.exe aaa.txt bbb_dir
 C:\Users\user\Desktop> go-trash.exe -l
 
 # Trash Box #
-C:\Users\user\Desktop\aaa.txt
-C:\Users\user\Desktop\bbb_dir
+
+InFolder        : aaa.txt
+Normal          : C:\Users\user\Desktop\aaa.txt
+ForParsing      : C:\$RECYCLE.BIN\S-xxx\$RABCD.txt
+DateDeleted     : 2023/1/2 12:34:56
+Size            : 1234
+
+InFolder        : bbb_dir
+Normal          : C:\Users\user\Desktop\bbb_dir
+ForParsing      : C:\$RECYCLE.BIN\S-xxx\$R1C0U4Q
+DateDeleted     : 2023/1/2 12:34:56
+Size            : 0
 ```
 
 * Linux
@@ -36,6 +46,14 @@ C:\Users\user\Desktop\bbb_dir
 ~$ go-trash -l
 
 # Trash Box #
-/home/user/aaa.txt
-/home/user/bbb_dir
+
+FileName        : aaa.txt
+Location        : /home/user/aaa.txt
+DeletedDate     : 2023-01-23T12:34:56
+Size            : 1234
+
+FileName        : bbb_dir
+Location        : /home/user/bbb_dir
+DeletedDate     : 2023-01-23T12:34:56
+Size            : 0
 ```
