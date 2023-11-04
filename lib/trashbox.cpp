@@ -121,7 +121,6 @@ int PrintTrashBox() {
     return 0;
 }
 
-
 int RestoreItem(char *file) {
     // Initialize COM
     CoInitialize(NULL);
@@ -150,7 +149,6 @@ int RestoreItem(char *file) {
     }
 
     IContextMenu* pMenu = nullptr;
-    hr = pRecycleBinFolder->EnumObjects(nullptr, SHCONTF_NONFOLDERS, &pEnum);
     while (pEnum->Next(1, &pItemIDL, NULL) == S_OK) {
         STRRET pName;
         hr = pRecycleBinFolder->GetDisplayNameOf(pItemIDL, SHGDN_INFOLDER, &pName);
@@ -166,11 +164,10 @@ int RestoreItem(char *file) {
             continue;
         }
 
-        hr = pRecycleBinFolder->GetUIObjectOf(nullptr, 1, (LPCITEMIDLIST*)&pItemIDL, IID_IContextMenu, nullptr, (void**)&pMenu);
-        ILFree(pItemIDL);
-
-        if (!strncmp(file, pszName, strlen(file))){
-            wprintf(L"Restore : %s \n", pszName);
+        // Support for wildcard
+        if (PathMatchSpec(pszName, file)){
+            hr = pRecycleBinFolder->GetUIObjectOf(nullptr, 1, (LPCITEMIDLIST*)&pItemIDL, IID_IContextMenu, nullptr, (void**)&pMenu);
+            PrintDisplayName(pRecycleBinFolder, pItemIDL, SHGDN_NORMAL, TEXT("Restore\t"));
 
             // http://hiroshi0945.blog75.fc2.com/blog-entry-66.html#_InvokeCommandInRecycleBin%E9%96%A2%E6%95%B0
             CMINVOKECOMMANDINFO ici = { sizeof(CMINVOKECOMMANDINFO) };
@@ -178,6 +175,7 @@ int RestoreItem(char *file) {
             ici.nShow = SW_NORMAL;
             hr = pMenu->InvokeCommand((CMINVOKECOMMANDINFO*)&ici);
         }
+        ILFree(pItemIDL);
         CoTaskMemFree(pszName);
     }
 
