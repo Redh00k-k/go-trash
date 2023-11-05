@@ -7,6 +7,7 @@ import (
 	/*
 		#cgo LDFLAGS: -Llib -ltrashbox -lOle32 -lOleAut32 -lShlwapi -luuid -lpropsys -lstdc++ -static
 		#include "lib/trashbox.h"
+		#include <stdlib.h>
 	*/
 	"C"
 
@@ -63,6 +64,13 @@ type SHFILEOPSTRUCT struct {
 
 func PrintTrashBoxItems() (ret int) {
 	ret = int(C.PrintTrashBox())
+	return
+}
+
+func RestoreItem(file string) (ret int) {
+	cStr := C.CString(file)
+	defer C.free(unsafe.Pointer(cStr))
+	ret = int(C.RestoreItem(cStr))
 	return
 }
 

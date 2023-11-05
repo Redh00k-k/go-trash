@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 int PrintTrashBox(void);
+int RestoreItem(char *file);
 
 #ifdef __cplusplus
 }
