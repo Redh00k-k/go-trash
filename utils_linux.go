@@ -153,14 +153,14 @@ func RestoreItem(filename string) (ret int) {
 	trashBase := strings.Replace("~/.local/share/Trash", "~", user.HomeDir, 1)
 
 	// Generate fullPath from .~/.local/share/Trash/files/
-	allFiles, err := ioutil.ReadDir(trashBase + "/files/")
+	allFiles, err := os.ReadDir(trashBase + "/files/")
 	if err != nil {
 		fmt.Errorf("Failure to get files in ~/.local/share/Trash : %s", err)
 		return 1
 	}
 
 	for _, file := range allFiles {
-		if !strings.HasPrefix(file.Name(), filename) {
+		if isMatch, _ := filepath.Match(filename, file.Name()); !isMatch {
 			continue
 		}
 
@@ -199,7 +199,7 @@ func RestoreItem(filename string) (ret int) {
 			return 1
 		}
 
-		fmt.Printf("Restore: %s\n", decodedFilePath)
+		fmt.Printf("Restore\t: %s\n", decodedFilePath)
 	}
 
 	return 0
