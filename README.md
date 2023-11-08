@@ -4,10 +4,11 @@ Works on Linux and Windows 10.
 
 ## Usage
 ```
-$ go-trash -h
-Usage: go-trash.exe [-hl] [parameters ...]
- -h    Show help
- -l    List trashed files
+$ ./go-trash -h
+Usage: go-trash [-hl] [-u File] [parameters ...]
+ -h       Show help
+ -l       List trashed files
+ -u File  Restore files to original location
 ```
 
 ### Trash
@@ -18,7 +19,7 @@ C:\Users\user\Desktop> go-trash.exe aaa.txt bbb_dir
 
 * Linux
 ```
-~$ go-trash aaa.txt bbb_dir
+~$ ./go-trash aaa.txt bbb_dir
 ```
 
 ### Print list trashed files
@@ -43,7 +44,7 @@ Size            : 0
 
 * Linux
 ```
-~$ go-trash -l
+~$ ./go-trash -l
 
 # Trash Box #
 
@@ -56,4 +57,18 @@ FileName        : bbb_dir
 Location        : /home/user/bbb_dir
 DeletedDate     : 2023-01-23T12:34:56
 Size            : 0
+```
+
+
+### Restore files
+* Windows
+```
+C:\Users\user\Desktop> go-trash.exe -u *.txt
+Restore         : C:\Users\user\Desktop\aaa.txt
+```
+
+* Linux
+```
+~$ ./go-trash -u bbb_dir
+Restore: /home/user/bbb_dir
 ```
