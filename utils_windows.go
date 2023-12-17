@@ -13,6 +13,9 @@ import (
 
 	"golang.org/x/sys/windows"
 )
+import (
+	"errors"
+)
 
 // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shfileoperationw
 var (
@@ -50,6 +53,15 @@ const (
 	FOF_NO_UI                 = FOF_SILENT | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR
 )
 
+const (
+	FORMAT_MESSAGE_ALLOCATE_BUFFER = 0x00000100
+	FORMAT_MESSAGE_ARGUMENT_ARRAY  = 0x00002000
+	FORMAT_MESSAGE_FROM_HMODULE    = 0x00000800
+	FORMAT_MESSAGE_FROM_STRING     = 0x00000400
+	FORMAT_MESSAGE_FROM_SYSTEM     = 0x00001000
+	FORMAT_MESSAGE_IGNORE_INSERTS  = 0x00000200
+)
+
 // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-shfileopstructa
 type SHFILEOPSTRUCT struct {
 	Hwnd                 uintptr
@@ -74,6 +86,20 @@ func RestoreItem(file string) (ret int) {
 	return
 }
 
+func _FormatMessage(errno uintptr) (err error) {
+	buf := make([]uint16, 0xff)
+	windows.FormatMessage(
+		windows.FORMAT_MESSAGE_FROM_SYSTEM,
+		uintptr(0),
+		uint32(errno),
+		0,
+		buf,
+		nil,
+	)
+
+	return errors.New(windows.UTF16ToString(buf))
+}
+
 func _SHFileOperation(
 	shFileOp *SHFILEOPSTRUCT,
 ) (r1 uintptr, err error) {
@@ -84,13 +110,18 @@ func _SHFileOperation(
 	return
 }
 
-func MoveToTrashBox(path string) (ret uintptr) {
+func MoveToTrashBox(path string) (err error) {
 	var fileOp SHFILEOPSTRUCT
 	fileOp.Hwnd = uintptr(0)
 	fileOp.Func = FO_DELETE
 	fileOp.From = windows.StringToUTF16Ptr(path)
 	fileOp.Flags = FOF_SILENT | FOF_ALLOWUNDO | FOF_NOCONFIRMATION
 
-	ret, _ = _SHFileOperation(&fileOp)
-	return
+	// Return error is always "The operation completed successfully."
+	ret, _ := _SHFileOperation(&fileOp)
+	if ret != 0 {
+		// Call FormatMessage API to display correct errors.
+		return _FormatMessage(ret)
+	}
+	return nil
 }

@@ -41,9 +41,9 @@ func main() {
 	}
 
 	for _, path := range args {
-		ret := MoveToTrashBox(path)
-		if ret != 0 {
-			fmt.Println("go-trash: cannot move to trashbox: ", path)
+		err := MoveToTrashBox(path)
+		if err != nil {
+			fmt.Println("[Error] ", err)
 		}
 	}
 }
