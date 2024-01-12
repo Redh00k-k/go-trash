@@ -28,7 +28,7 @@ func main() {
 	if isList == true {
 		fmt.Println("")
 		fmt.Println("# Trash Box #")
-		if PrintTrashBoxItems() != 0 {
+		if PrintTrashBoxItems() != nil {
 			fmt.Println("go-trash: cannot print items in trashbox")
 			os.Exit(1)
 		}

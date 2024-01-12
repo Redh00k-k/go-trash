@@ -455,17 +455,17 @@ func GetRecycleBinShellFolder(pRecycleBinFolder **IShellFolder) (ret uintptr, er
 	return ret, err
 }
 
-func PrintTrashBoxItems() (r int) {
+func PrintTrashBoxItems() error {
 	ret, _ := _CoInitialize(uintptr(0))
 	if ret != 0 {
 		// Call FormatMessage API to display correct errors.
-		return 1
+		return _FormatMessage(ret)
 	}
 
 	var pRecycleBinFolder *IShellFolder
 	ret, _ = GetRecycleBinShellFolder(&pRecycleBinFolder)
 	if ret != 0 {
-		return 1
+		return _FormatMessage(ret)
 	}
 	defer pRecycleBinFolder.Release()
 
@@ -473,7 +473,7 @@ func PrintTrashBoxItems() (r int) {
 	ret = pRecycleBinFolder.EnumObjects(0, SHCONTF_FOLDERS|SHCONTF_NONFOLDERS, &pEnum)
 	if ret != 0 {
 		fmt.Println("Failed to enumerate Recycle Bin items.")
-		return 1
+		return _FormatMessage(ret)
 	}
 	defer pEnum.Release()
 
@@ -495,7 +495,7 @@ func PrintTrashBoxItems() (r int) {
 	}
 
 	_CoUninitialize()
-	return 0
+	return nil
 }
 
 type IContextMenuVtbl struct {
