@@ -1,19 +1,6 @@
 package main
 
 import (
-	"syscall"
-	"unsafe"
-
-	/*
-		#cgo LDFLAGS: -Llib -ltrashbox -lOle32 -lOleAut32 -lShlwapi -luuid -lpropsys -lstdc++ -static
-		#include "lib/trashbox.h"
-		#include <stdlib.h>
-	*/
-	"C"
-
-	"golang.org/x/sys/windows"
-)
-import (
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -21,8 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf16"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shfileoperationw
@@ -240,6 +231,20 @@ type SHITEMID struct {
 	ABID [1]byte
 }
 
+func CoTaskMemFree(pv uintptr) {
+	modole32.NewProc("CoTaskMemFree").Call(pv)
+}
+
+func (this *STRRET) pOleStr() **uint16 {
+	return (**uint16)(unsafe.Pointer(&this.Data[0]))
+}
+func (this *STRRET) uOffset() *uint32 {
+	return (*uint32)(unsafe.Pointer(&this.Data[0]))
+}
+func (this *STRRET) cStr() *[260]byte {
+	return (*[260]byte)(unsafe.Pointer(&this.Data[0]))
+}
+
 func (v *IShellFolder) Release() int32 {
 	ret, _, _ := syscall.Syscall(
 		v.lpVtbl.Release,
@@ -313,18 +318,43 @@ func (v *IShellFolder) GetDisplayNameOf(pidl *ITEMIDLIST, uFlags uint32, pName *
 	return ret
 }
 
-func CoTaskMemFree(pv uintptr) {
-	modole32.NewProc("CoTaskMemFree").Call(pv)
+func _SHGetSpecialFolderLocation(
+	hwnd uintptr,
+	csidl int,
+	ppidl uintptr,
+) (r1 uintptr, err error) {
+	r1, _, err = procSHGetSpecialFolderLocation.Call(hwnd, uintptr(csidl), ppidl)
+	return
 }
 
-func (this *STRRET) pOleStr() **uint16 {
-	return (**uint16)(unsafe.Pointer(&this.Data[0]))
+func _SHGetDesktopFolder(
+	ppshf uintptr,
+) (r1 uintptr, err error) {
+	r1, _, err = procSHGetDesktopFolder.Call(ppshf)
+
+	return
 }
-func (this *STRRET) uOffset() *uint32 {
-	return (*uint32)(unsafe.Pointer(&this.Data[0]))
+
+func _CoTaskMemFree(
+	pv uintptr,
+) (r1 uintptr, err error) {
+	r1, _, err = procCoTaskMemFree.Call(pv)
+
+	return
 }
-func (this *STRRET) cStr() *[260]byte {
-	return (*[260]byte)(unsafe.Pointer(&this.Data[0]))
+
+func _CoUninitialize() (r1 uintptr, err error) {
+	r1, _, err = procCoUninitialize.Call()
+
+	return
+}
+
+func _CoInitialize(
+	pvReserved uintptr,
+) (r1 uintptr, err error) {
+	r1, _, err = procCoInitialize.Call(pvReserved)
+
+	return
 }
 
 // https://stackoverflow.com/questions/39961171/golang-winapi-call-with-struct-parameter
@@ -396,45 +426,6 @@ func PrintDisplayName(psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, label 
 	}
 }
 
-func _SHGetSpecialFolderLocation(
-	hwnd uintptr,
-	csidl int,
-	ppidl uintptr,
-) (r1 uintptr, err error) {
-	r1, _, err = procSHGetSpecialFolderLocation.Call(hwnd, uintptr(csidl), ppidl)
-	return
-}
-
-func _SHGetDesktopFolder(
-	ppshf uintptr,
-) (r1 uintptr, err error) {
-	r1, _, err = procSHGetDesktopFolder.Call(ppshf)
-
-	return
-}
-
-func _CoTaskMemFree(
-	pv uintptr,
-) (r1 uintptr, err error) {
-	r1, _, err = procCoTaskMemFree.Call(pv)
-
-	return
-}
-
-func _CoUninitialize() (r1 uintptr, err error) {
-	r1, _, err = procCoUninitialize.Call()
-
-	return
-}
-
-func _CoInitialize(
-	pvReserved uintptr,
-) (r1 uintptr, err error) {
-	r1, _, err = procCoInitialize.Call(pvReserved)
-
-	return
-}
-
 func GetRecycleBinShellFolder(pRecycleBinFolder **IShellFolder) (ret uintptr, err error) {
 	var pDesktopFolder *IShellFolder
 	ret, err = _SHGetDesktopFolder(uintptr(unsafe.Pointer(&pDesktopFolder)))
@@ -498,24 +489,87 @@ func PrintTrashBoxItems() error {
 	return nil
 }
 
-type IContextMenuVtbl struct {
-	QueryInterface   uintptr
-	AddRef           uintptr
-	Release          uintptr
-	QueryContextMenu uintptr
-	InvokeCommand    uintptr
-	GetCommandString uintptr
+func unDelete(psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, path string) error {
+	var pName STRRET
+	ret := psf.GetDisplayNameOf(pidl, uFlags, &pName)
+	if ret != 0 {
+		return _FormatMessage(ret)
+	}
+
+	r := os.Rename(CStringToString(*pName.pOleStr()), path)
+	if r != nil {
+		return r
+	}
+	recycleDir := filepath.Dir(CStringToString(*pName.pOleStr()))
+	ipath := strings.Replace(filepath.Base(CStringToString(*pName.pOleStr())), "$R", "$I", 1)
+	os.Remove(recycleDir + "\\" + ipath)
+
+	return nil
 }
 
-type IContextMenu struct {
-	lpVtbl *IContextMenuVtbl
+func isMatchFilename(psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, file string) bool {
+	var pName STRRET
+	ret := psf.GetDisplayNameOf(pidl, uFlags, &pName)
+	if ret != 0 {
+		fmt.Println("Failed to get item name.")
+		return false
+	}
+
+	if strings.Contains(CStringToString(*pName.pOleStr()), file) {
+		return true
+	}
+
+	return false
 }
 
-func RestoreItem(file string) (ret int) {
-	cStr := C.CString(file)
-	defer C.free(unsafe.Pointer(cStr))
-	ret = int(C.RestoreItem(cStr))
-	return
+func RestoreItem(file string) error {
+	ret, _ := _CoInitialize(uintptr(0))
+	if ret != 0 {
+		// Call FormatMessage API to display correct errors.
+		return _FormatMessage(ret)
+	}
+
+	var pRecycleBinFolder *IShellFolder
+	ret, _ = GetRecycleBinShellFolder(&pRecycleBinFolder)
+	if ret != 0 {
+		return _FormatMessage(ret)
+	}
+	defer pRecycleBinFolder.Release()
+
+	var pEnum *IEnumIDList
+	ret = pRecycleBinFolder.EnumObjects(0, SHCONTF_FOLDERS|SHCONTF_NONFOLDERS, &pEnum)
+	if ret != 0 {
+		fmt.Println("Failed to enumerate Recycle Bin items.")
+		return _FormatMessage(ret)
+	}
+	defer pEnum.Release()
+
+	var pItemIDL *ITEMIDLIST
+	for {
+		ret = pEnum.Next(1, &pItemIDL, nil)
+		if ret != 0 {
+			break
+		}
+
+		var pName STRRET
+		ret := pRecycleBinFolder.GetDisplayNameOf(pItemIDL, SHGDN_NORMAL, &pName)
+		if ret != 0 {
+			fmt.Println("Failed to get item name.")
+			return _FormatMessage(ret)
+		}
+
+		path := CStringToString(*pName.pOleStr())
+		if isMatchFilename(pRecycleBinFolder, pItemIDL, SHGDN_NORMAL, file) {
+			fmt.Println("Restore: " + path)
+			unDelete(pRecycleBinFolder, pItemIDL, SHGDN_FORPARSING, path)
+		}
+
+		CoTaskMemFree(uintptr(unsafe.Pointer(pItemIDL)))
+	}
+
+	_CoUninitialize()
+
+	return nil
 }
 
 func _FormatMessage(errno uintptr) (err error) {
