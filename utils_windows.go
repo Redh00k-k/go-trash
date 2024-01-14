@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -391,6 +393,20 @@ func CStringToString(cs *uint16) (s string) {
 	return ""
 }
 
+func getDateDelete(rbInternalFormat []byte) time.Time {
+	var dd int64
+	binary.Read(bytes.NewReader(rbInternalFormat[16:]), binary.LittleEndian, &dd)
+	// Convert NT time to Unix epoch
+	// Unix: 1/1/1970 00:00, Windows NT: 1/1/1601 00:00
+	return time.Unix((dd/10000000)-60*60*24*365*369, 0)
+}
+
+func getFileSize(rbInternalFormat []byte) int64 {
+	var fsize int64
+	binary.Read(bytes.NewReader(rbInternalFormat[8:16]), binary.LittleEndian, &fsize)
+	return fsize
+}
+
 func PrintDisplayName(psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, label string) {
 	var pName STRRET
 	ret := psf.GetDisplayNameOf(pidl, uFlags, &pName)
@@ -410,16 +426,9 @@ func PrintDisplayName(psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, label 
 		f.Read(buf)
 
 		if strings.Contains(label, "DateDelete") {
-			var dd int64
-			binary.Read(bytes.NewReader(buf[16:]), binary.LittleEndian, &dd)
-			// Convert NT time to Unix epoch
-			// Unix: 1/1/1970 00:00, Windows NT: 1/1/1601 00:00
-			ticks := time.Unix((dd/10000000)-60*60*24*365*369, 0)
-			fmt.Printf("%s\t: %v\n", label, ticks.Local())
+			fmt.Printf("%s\t: %v\n", label, getDateDelete(buf).Local())
 		} else if strings.Contains(label, "Size") {
-			var fsize int64
-			binary.Read(bytes.NewReader(buf[8:16]), binary.LittleEndian, &fsize)
-			fmt.Printf("%s\t: %v\n", label, fsize)
+			fmt.Printf("%s\t: %v\n", label, getFileSize(buf))
 		}
 	} else {
 		fmt.Printf("%s\t: %v\n", label, CStringToString(*pName.pOleStr()))
@@ -489,40 +498,85 @@ func PrintTrashBoxItems() error {
 	return nil
 }
 
-func unDelete(psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, path string) error {
-	var pName STRRET
-	ret := psf.GetDisplayNameOf(pidl, uFlags, &pName)
-	if ret != 0 {
-		return _FormatMessage(ret)
+func unDelete(id uint, fl []fileInfo, outputPath string) error {
+	if uint(len(fl)) < id {
+		return fmt.Errorf("index out of range")
 	}
 
-	r := os.Rename(CStringToString(*pName.pOleStr()), path)
+	var path string
+	if len(outputPath) == 0 {
+		// assign original location to 'path'
+		path = fl[id].path
+	} else {
+		path, _ = filepath.Abs(outputPath)
+	}
+	fmt.Printf("Restore %s → %s\n", fl[id].path, path)
+
+	r := os.Rename(fl[id].forParsing, path)
 	if r != nil {
 		return r
 	}
-	recycleDir := filepath.Dir(CStringToString(*pName.pOleStr()))
-	ipath := strings.Replace(filepath.Base(CStringToString(*pName.pOleStr())), "$R", "$I", 1)
+	recycleDir := filepath.Dir(fl[id].forParsing)
+	ipath := strings.Replace(filepath.Base(fl[id].forParsing), "$R", "$I", 1)
 	os.Remove(recycleDir + "\\" + ipath)
 
 	return nil
 }
 
-func isMatchFilename(psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, file string) bool {
+func isMatchFilename(psf *IShellFolder, pidl *ITEMIDLIST, file string) bool {
 	var pName STRRET
-	ret := psf.GetDisplayNameOf(pidl, uFlags, &pName)
+	ret := psf.GetDisplayNameOf(pidl, SHGDN_NORMAL, &pName)
 	if ret != 0 {
 		fmt.Println("Failed to get item name.")
 		return false
 	}
 
-	if strings.Contains(CStringToString(*pName.pOleStr()), file) {
+	if strings.Contains(filepath.Base(CStringToString(*pName.pOleStr())), file) {
 		return true
 	}
 
 	return false
 }
 
-func RestoreItem(file string) error {
+type fileInfo struct {
+	path       string
+	forParsing string
+	dateDelete time.Time
+	size       int64
+}
+
+func addMatchedFileList(fl []fileInfo, psf *IShellFolder, pidl *ITEMIDLIST) []fileInfo {
+	var fi fileInfo
+	var pName STRRET
+	// For path
+	ret := psf.GetDisplayNameOf(pidl, SHGDN_NORMAL, &pName)
+	if ret != 0 {
+		fmt.Println("Failed to get item name.")
+	}
+	normalPath := CStringToString(*pName.pOleStr())
+
+	// For dateDelete, size
+	ret = psf.GetDisplayNameOf(pidl, SHGDN_FORPARSING, &pName)
+	if ret != 0 {
+		fmt.Println("Failed to get item name.")
+	}
+	parsingPath := CStringToString(*pName.pOleStr())
+	recycleDir := filepath.Dir(CStringToString(*pName.pOleStr()))
+	ipath := strings.Replace(filepath.Base(CStringToString(*pName.pOleStr())), "$R", "$I", 1)
+	buf := make([]byte, 24)
+	f, _ := os.Open(recycleDir + "\\" + ipath)
+	f.Read(buf)
+
+	// assign value to fileInfo
+	fi.path = normalPath
+	fi.forParsing = parsingPath
+	fi.dateDelete = getDateDelete(buf).Local()
+	fi.size = getFileSize(buf)
+
+	return append(fl, fi)
+}
+
+func RestoreItem(file string, outputPath string) error {
 	ret, _ := _CoInitialize(uintptr(0))
 	if ret != 0 {
 		// Call FormatMessage API to display correct errors.
@@ -545,6 +599,7 @@ func RestoreItem(file string) error {
 	defer pEnum.Release()
 
 	var pItemIDL *ITEMIDLIST
+	var fl []fileInfo
 	for {
 		ret = pEnum.Next(1, &pItemIDL, nil)
 		if ret != 0 {
@@ -558,13 +613,32 @@ func RestoreItem(file string) error {
 			return _FormatMessage(ret)
 		}
 
-		path := CStringToString(*pName.pOleStr())
-		if isMatchFilename(pRecycleBinFolder, pItemIDL, SHGDN_NORMAL, file) {
-			fmt.Println("Restore: " + path)
-			unDelete(pRecycleBinFolder, pItemIDL, SHGDN_FORPARSING, path)
+		if isMatchFilename(pRecycleBinFolder, pItemIDL, file) {
+			fl = addMatchedFileList(fl, pRecycleBinFolder, pItemIDL)
+			// unDelete(pRecycleBinFolder, pItemIDL, SHGDN_FORPARSING, path)
 		}
 
 		CoTaskMemFree(uintptr(unsafe.Pointer(pItemIDL)))
+	}
+
+	var id int
+	if len(fl) > 1 {
+		fmt.Println("ID\t DateDeleted\t\t\t FileSize\t Path")
+		for i, v := range fl {
+			fmt.Printf("%d\t %s\t %d\t\t %s\t\n", i, v.dateDelete, v.size, v.path)
+		}
+
+		fmt.Printf("Which one do you restore? > ")
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		id, _ = strconv.Atoi(scanner.Text())
+	} else if len(fl) == 1 {
+		id = 0
+	}
+
+	r := unDelete(uint(id), fl, outputPath)
+	if r != nil {
+		return r
 	}
 
 	_CoUninitialize()
