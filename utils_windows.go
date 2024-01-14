@@ -628,7 +628,7 @@ func RestoreItem(file string, outputPath string) error {
 			fmt.Printf("%d\t %s\t %d\t\t %s\t\n", i, v.dateDelete, v.size, v.path)
 		}
 
-		fmt.Printf("Which one do you restore? > ")
+		fmt.Printf("Which one do you want to restore[ID] ? > ")
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()
 		id, _ = strconv.Atoi(scanner.Text())
