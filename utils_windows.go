@@ -398,7 +398,7 @@ func getDateDelete(rbInternalFormat []byte) time.Time {
 	binary.Read(bytes.NewReader(rbInternalFormat[16:]), binary.LittleEndian, &dd)
 	// Convert NT time to Unix epoch
 	// Unix: 1/1/1970 00:00, Windows NT: 1/1/1601 00:00
-	return time.Unix((dd/10000000)-60*60*24*365*369, 0)
+	return time.Unix((dd/10000000)-11644473600, (dd%10000000)*100)
 }
 
 func getFileSize(rbInternalFormat []byte) int64 {
