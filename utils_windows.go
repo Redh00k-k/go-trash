@@ -620,6 +620,7 @@ func RestoreItem(file string, outputPath string) error {
 
 		CoTaskMemFree(uintptr(unsafe.Pointer(pItemIDL)))
 	}
+	_CoUninitialize()
 
 	var id int
 	if len(fl) > 1 {
@@ -634,14 +635,15 @@ func RestoreItem(file string, outputPath string) error {
 		id, _ = strconv.Atoi(scanner.Text())
 	} else if len(fl) == 1 {
 		id = 0
+	} else {
+		fmt.Println("Error: No such file or directory")
+		return nil
 	}
 
 	r := unDelete(uint(id), fl, outputPath)
 	if r != nil {
 		return r
 	}
-
-	_CoUninitialize()
 
 	return nil
 }
