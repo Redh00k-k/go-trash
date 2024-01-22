@@ -5,9 +5,10 @@ Works on Linux and Windows 10.
 ## Usage
 ```
 $ ./go-trash -h
-Usage: go-trash [-hl] [-u File] [parameters ...]
+Usage: go-trash [-hl] [-o File] [-u File] [parameters ...]
  -h       Show help
  -l       List trashed files
+ -o File  Output file to location
  -u File  Restore files to original location
 ```
 
@@ -61,9 +62,11 @@ Size            : 0
 
 
 ### Restore files
-* Windows
+If only one file or directory exists, restore it
+
+* Windows 
 ```
-C:\Users\user\Desktop> go-trash.exe -u *.txt
+C:\Users\user\Desktop> go-trash.exe -u aaa.txt
 Restore         : C:\Users\user\Desktop\aaa.txt
 ```
 
@@ -71,4 +74,28 @@ Restore         : C:\Users\user\Desktop\aaa.txt
 ```
 ~$ ./go-trash -u bbb_dir
 Restore: /home/user/bbb_dir
+```
+
+
+If more than one file exists, restore the file with the selected 'ID'
+* Windows 
+```
+C:\Users\user\Desktop> go-trash.exe aaa.txt ../aaa.txt
+C:\Users\user\Desktop> go-trash.exe -u aaa.txt -o test.txt 
+ID       DateDeleted                     FileSize        Path
+0        2024-01-01 12:34:56 +0900 JST   7               C:\Users\user\Desktop\aaa.txt
+1        2024-01-01 12:35:00 +0900 JST   130             C:\Users\user\aaa.txt
+Which one do you restore? > 0
+Restore C:\Users\user\Desktop\aaa.txt → C:\Users\user\Desktop\test.txt
+```
+
+* Linux
+```
+~$ ./go-trash bbb_dir /tmp/bbb_dir
+~$ ./go-trash  -u bbb -o test
+ID       DateDeleted                     FileSize        Path
+0        2024-01-01 12:34:56 +0900 JST   0               /home/user/bbb_dir
+1        2024-01-01 12:35:00 +0900 JST   0               /tmp/bbb_dir
+Which one do you restore? > 0
+Restore /home/user/bbb_dir → /home/user/bbb_dir
 ```
