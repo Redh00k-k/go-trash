@@ -499,8 +499,8 @@ func PrintTrashBoxItems() error {
 }
 
 func unDelete(id uint, fl []fileInfo, outputPath string) error {
-	if uint(len(fl)) < id {
-		return fmt.Errorf("index out of range")
+	if uint(len(fl)) <= id {
+		return fmt.Errorf("Index out of range")
 	}
 
 	var path string
@@ -636,8 +636,7 @@ func RestoreItem(file string, outputPath string) error {
 	} else if len(fl) == 1 {
 		id = 0
 	} else {
-		fmt.Println("Error: No such file or directory")
-		return nil
+		return fmt.Errorf("No such file or directorye")
 	}
 
 	r := unDelete(uint(id), fl, outputPath)

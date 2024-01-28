@@ -192,8 +192,8 @@ func addMatchedFileList(fl []fileInfo, infoFilePath string, filesFilePath string
 }
 
 func unDelete(id uint, fl []fileInfo, outputPath string) (err error) {
-	if uint(len(fl)) < id {
-		return fmt.Errorf("index out of range")
+	if uint(len(fl)) <= id {
+		return fmt.Errorf("Index out of range")
 	}
 	var path string
 	if len(outputPath) == 0 {
@@ -259,8 +259,7 @@ func RestoreItem(filename string, outputPath string) (ret error) {
 	} else if len(fl) == 1 {
 		unDelete(uint(0), fl, outputPath)
 	} else {
-		fmt.Println("Error: No such file or directory")
-		return nil
+		return fmt.Errorf("No such file or director")
 	}
 
 	return nil
