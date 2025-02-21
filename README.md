@@ -83,8 +83,8 @@ If more than one file exists, restore the file with the selected 'ID'
 C:\Users\user\Desktop> go-trash.exe aaa.txt ../aaa.txt
 C:\Users\user\Desktop> go-trash.exe -u aaa.txt -o test.txt 
 ID       DateDeleted                     FileSize        Path
-0        2024-01-01 12:34:56 +0900 JST   7               C:\Users\user\Desktop\aaa.txt
-1        2024-01-01 12:35:00 +0900 JST   130             C:\Users\user\aaa.txt
+0        2024-01-01 12:34:56             7               C:\Users\user\Desktop\aaa.txt
+1        2024-01-01 12:35:00             130             C:\Users\user\aaa.txt
 Which one do you restore? > 0
 Restore C:\Users\user\Desktop\aaa.txt → C:\Users\user\Desktop\test.txt
 ```
@@ -94,8 +94,8 @@ Restore C:\Users\user\Desktop\aaa.txt → C:\Users\user\Desktop\test.txt
 ~$ ./go-trash bbb_dir /tmp/bbb_dir
 ~$ ./go-trash  -u bbb -o test
 ID       DateDeleted                     FileSize        Path
-0        2024-01-01 12:34:56 +0900 JST   0               /home/user/bbb_dir
-1        2024-01-01 12:35:00 +0900 JST   0               /tmp/bbb_dir
+0        2024-01-01 12:34:56             0               /home/user/bbb_dir
+1        2024-01-01 12:35:00             0               /tmp/bbb_dir
 Which one do you restore? > 0
 Restore /home/user/bbb_dir → /home/user/bbb_dir
 ```
