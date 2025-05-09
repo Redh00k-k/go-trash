@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -35,6 +36,7 @@ type model struct {
 	viewstate     uint
 	isfilter      bool
 	selectedRow   table.Row
+	trashList     []fi
 }
 
 var mul_rate int = 5
@@ -58,15 +60,15 @@ var columns = []table.Column{
 var numTableRows int = 20
 
 func initialModel() model {
-	trashfiles, err := GetTrashBoxItems()
+	trash, err := GetTrashBoxItems()
 	if err != nil {
 		fmt.Println("go-trash: ", err)
 		os.Exit(1)
 	}
 
 	var allRows = []table.Row{}
-	for i, tf := range trashfiles {
-		tmp := []string{strconv.Itoa(i + 1), tf.filename, strconv.FormatInt(tf.size, 10), tf.dateDeleted.Format("2006-01-02T15:04:05Z07:00"), tf.location}
+	for i, tf := range trash {
+		tmp := []string{strconv.Itoa(i), tf.filename, strconv.FormatInt(tf.size, 10), tf.dateDeleted.Format("2006-01-02T15:04:05Z07:00"), tf.location}
 		allRows = append(allRows, tmp)
 	}
 
@@ -100,6 +102,7 @@ func initialModel() model {
 		table:     t,
 		allRows:   allRows,
 		textInput: ti,
+		trashList: trash,
 	}
 }
 
@@ -160,6 +163,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Focus()
 				return m, textinput.Blink
 			}
+		case msg.String() == "U":
+			cursor := m.table.Cursor()
+			if cursor < len(m.table.Rows()) {
+				Undelete(m.trashList[cursor].inTrashBox, m.trashList[cursor].location)
+			}
+			m.allRows = append(m.allRows[:cursor], m.allRows[cursor+1:]...)
+			m.trashList = append(m.trashList[:cursor], m.trashList[cursor+1:]...)
+			m.table.SetRows(m.allRows)
+
+			if m.viewstate == detailView {
+				m.viewstate = tableView
+			}
+
 		case msg.Type == tea.KeyEnter:
 			if m.isfilter {
 				m.filteredInput = m.textInput.Value()
@@ -212,7 +228,7 @@ func (m model) View() string {
 		if m.isfilter {
 			sb.WriteString("[Enter]: apply filter  [Esc]:cancel filter\n")
 		} else {
-			sb.WriteString("[/]:start filter  [Esc]:quit\n")
+			sb.WriteString("[/]:start filter [U]:Undelete file [Esc]:quit\n")
 		}
 
 	case detailView:
@@ -227,7 +243,7 @@ func (m model) View() string {
 
 		// Footer
 		sb.WriteString("\n\n")
-		sb.WriteString("[r]:Restore file [Esc]:quit\n")
+		sb.WriteString("[U]:Undelete file [Esc]:quit\n")
 	}
 	return sb.String()
 }
@@ -267,10 +283,42 @@ func main() {
 	args := getopt.Args()
 
 	if len(undeleteFile) != 0 {
-		err := RestoreItem(undeleteFile, outputPath)
+		trashfiles, err := GetTrashBoxItems()
 		if err != nil {
 			fmt.Println("go-trash: ", err)
+			os.Exit(1)
 		}
+
+		var udFileList []fi
+		for _, file := range trashfiles {
+			if strings.Contains(file.filename, undeleteFile) {
+				udFileList = append(udFileList, file)
+			}
+		}
+
+		if len(udFileList) > 1 {
+			fmt.Printf("Found %d files that matched.\n\n", len(udFileList))
+			for _, file := range udFileList {
+				fmt.Printf("Filename: %s\n", file.filename)
+				fmt.Printf("Location: %s\n\n", file.location)
+			}
+			fmt.Printf("Do you want to undelete them? [Y/n]: ")
+			scanner := bufio.NewScanner(os.Stdin)
+			scanner.Scan()
+			if scanner.Text() != "Y" {
+				os.Exit(0)
+			}
+		}
+
+		for _, file := range udFileList {
+			err := Undelete(file.inTrashBox, file.location)
+			if err != nil {
+				fmt.Println("go-trash: ", err)
+				os.Exit(1)
+			}
+			fmt.Printf("UnDelete %s → %s\n", file.filename, file.location)
+		}
+
 		os.Exit(0)
 	}
 

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -525,26 +524,15 @@ func PrintDisplayName(line string, label string) {
 	fmt.Printf("%-12s: %s\n", label, line)
 }
 
-func unDelete(id uint, fl []fileInfo, outputPath string) error {
-	if uint(len(fl)) <= id {
-		return fmt.Errorf("Index out of range")
-	}
-
-	var path string
-	if len(outputPath) == 0 {
-		// assign original location to 'path'
-		path = fl[id].path
-	} else {
-		path, _ = filepath.Abs(outputPath)
-	}
-	fmt.Printf("Restore %s → %s\n", fl[id].path, path)
-
-	r := os.Rename(fl[id].forParsing, path)
+func Undelete(srcPath string, dstPath string) error {
+	r := os.Rename(srcPath, dstPath)
 	if r != nil {
 		return r
 	}
-	recycleDir := filepath.Dir(fl[id].forParsing)
-	ipath := strings.Replace(filepath.Base(fl[id].forParsing), "$R", "$I", 1)
+
+	// $I file is still in the trash box. So deleted it.
+	recycleDir := filepath.Dir(srcPath)
+	ipath := strings.Replace(srcPath, "$R", "$I", 1)
 	os.Remove(recycleDir + "\\" + ipath)
 
 	return nil
@@ -563,115 +551,6 @@ func isMatchFilename(psf *IShellFolder, pidl *ITEMIDLIST, file string) bool {
 	}
 
 	return false
-}
-
-type fileInfo struct {
-	path       string
-	forParsing string
-	dateDelete time.Time
-	size       int64
-}
-
-func addMatchedFileList(fl []fileInfo, psf *IShellFolder, pidl *ITEMIDLIST) []fileInfo {
-	var fi fileInfo
-	var pName STRRET
-	// For path
-	ret := psf.GetDisplayNameOf(pidl, SHGDN_NORMAL, &pName)
-	if ret != 0 {
-		fmt.Println("Failed to get item name.")
-	}
-	normalPath := CStringToString(*pName.pOleStr())
-
-	// For dateDelete, size
-	ret = psf.GetDisplayNameOf(pidl, SHGDN_FORPARSING, &pName)
-	if ret != 0 {
-		fmt.Println("Failed to get item name.")
-	}
-	parsingPath := CStringToString(*pName.pOleStr())
-	recycleDir := filepath.Dir(CStringToString(*pName.pOleStr()))
-	ipath := strings.Replace(filepath.Base(CStringToString(*pName.pOleStr())), "$R", "$I", 1)
-	buf := make([]byte, 24)
-	f, _ := os.Open(recycleDir + "\\" + ipath)
-	f.Read(buf)
-
-	// assign value to fileInfo
-	fi.path = normalPath
-	fi.forParsing = parsingPath
-	fi.dateDelete = getDateDelete(buf).Local()
-	fi.size = getFileSize(buf)
-
-	return append(fl, fi)
-}
-
-func RestoreItem(file string, outputPath string) error {
-	ret, _ := _CoInitialize(uintptr(0))
-	if ret != 0 {
-		// Call FormatMessage API to display correct errors.
-		return _FormatMessage(ret)
-	}
-
-	var pRecycleBinFolder *IShellFolder
-	ret, _ = GetRecycleBinShellFolder(&pRecycleBinFolder)
-	if ret != 0 {
-		return _FormatMessage(ret)
-	}
-	defer pRecycleBinFolder.Release()
-
-	var pEnum *IEnumIDList
-	ret = pRecycleBinFolder.EnumObjects(0, SHCONTF_FOLDERS|SHCONTF_NONFOLDERS, &pEnum)
-	if ret != 0 {
-		fmt.Println("Failed to enumerate Recycle Bin items.")
-		return _FormatMessage(ret)
-	}
-	defer pEnum.Release()
-
-	var pItemIDL *ITEMIDLIST
-	var fl []fileInfo
-	for {
-		ret = pEnum.Next(1, &pItemIDL, nil)
-		if ret != 0 {
-			break
-		}
-
-		var pName STRRET
-		ret := pRecycleBinFolder.GetDisplayNameOf(pItemIDL, SHGDN_NORMAL, &pName)
-		if ret != 0 {
-			fmt.Println("Failed to get item name.")
-			return _FormatMessage(ret)
-		}
-
-		if isMatchFilename(pRecycleBinFolder, pItemIDL, file) {
-			fl = addMatchedFileList(fl, pRecycleBinFolder, pItemIDL)
-			// unDelete(pRecycleBinFolder, pItemIDL, SHGDN_FORPARSING, path)
-		}
-
-		CoTaskMemFree(uintptr(unsafe.Pointer(pItemIDL)))
-	}
-	_CoUninitialize()
-
-	var id int
-	if len(fl) > 1 {
-		fmt.Println("ID\t DateDeleted\t\t\t FileSize\t Path")
-		for i, v := range fl {
-			fmt.Printf("%d\t %s\t %d\t\t %s\t\n", i, v.dateDelete, v.size, v.path)
-		}
-
-		fmt.Printf("Which one do you want to restore[ID] ? > ")
-		scanner := bufio.NewScanner(os.Stdin)
-		scanner.Scan()
-		id, _ = strconv.Atoi(scanner.Text())
-	} else if len(fl) == 1 {
-		id = 0
-	} else {
-		return fmt.Errorf("No such file or directorye")
-	}
-
-	r := unDelete(uint(id), fl, outputPath)
-	if r != nil {
-		return r
-	}
-
-	return nil
 }
 
 func _FormatMessage(errno uintptr) (err error) {
