@@ -20,8 +20,12 @@ const (
 )
 
 type model struct {
-	table   table.Model
-	allRows []table.Row
+	table         table.Model
+	allRows       []table.Row
+	textInput     textinput.Model
+	filteredInput string
+	state         uint
+	isfilter      bool
 }
 
 var mul_rate int = 5
@@ -84,8 +88,9 @@ func initialModel() model {
 	t.SetStyles(s)
 
 	return model{
-		table:   t,
-		allRows: allRows,
+		table:     t,
+		allRows:   allRows,
+		textInput: ti,
 	}
 }
 
@@ -126,8 +131,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case msg.String() == "ctrl+c" || msg.String() == "esc":
+			// Cancel filter
+			if m.isfilter {
+				m.isfilter = false
+				m.textInput.Reset()
+				return m, nil
+			}
 			return m, tea.Quit
+
+		case msg.String() == "/":
+			// Filter
+			if !m.isfilter {
+				m.isfilter = true
+				m.textInput.Focus()
+				return m, textinput.Blink
+			}
+		case msg.Type == tea.KeyEnter:
+			if m.isfilter {
+				m.filteredInput = m.textInput.Value()
+				filteredRows := filterRows(m.allRows, m.filteredInput)
+				m.table.SetRows(filteredRows)
+				m.isfilter = false
+				m.textInput.Reset()
+				return m, nil
+			}
 		}
+	}
+	// Update input only if filtering
+	if m.isfilter {
+		m.textInput, cmd = m.textInput.Update(msg)
 	}
 
 	m.table, _ = m.table.Update(msg)
@@ -141,14 +173,40 @@ func (m model) View() string {
 	// Header
 	sb.WriteString("📋TrashBox Viewer\n\n")
 
+	// Filter.
+	if m.isfilter {
+		sb.WriteString("🔍 Filtering: " + m.textInput.View() + "\n\n")
+	}
+
 	// Table
 	sb.WriteString(m.table.View())
 
 	// Footer
 	sb.WriteString("\n\n")
-	sb.WriteString("[Esc]:quit\n")
+	if m.isfilter {
+		sb.WriteString("[Enter]: apply filter  [Esc]:cancel filter\n")
+	} else {
+		sb.WriteString("[/]:start filter  [Esc]:quit\n")
+	}
 
 	return sb.String()
+}
+
+func filterRows(rows []table.Row, keyword string) []table.Row {
+	if keyword == "" {
+		return rows
+	}
+
+	var filtered []table.Row
+	for _, row := range rows {
+		for _, col := range row {
+			if strings.Contains(strings.ToLower(col), strings.ToLower(keyword)) {
+				filtered = append(filtered, row)
+				break
+			}
+		}
+	}
+	return filtered
 }
 
 type fi struct {
