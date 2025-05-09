@@ -15,11 +15,11 @@ import (
 )
 
 type fi struct {
-	InFolder    string
-	Normal      string
-	ForParsing  string
-	DateDeleted time.Time
-	Size        int64
+	filename    string
+	location    string
+	inTrashBox  string
+	dateDeleted time.Time
+	size        int64
 }
 
 const (
@@ -52,7 +52,7 @@ var columns = []table.Column{
 	{Title: "Name", Width: nameWidth * mul_rate},
 	{Title: "Size", Width: sizeWidth * mul_rate},
 	{Title: "Date Deleted", Width: dateDeleteWidth * mul_rate},
-	{Title: "Original FullPath", Width: fullPathWidth * mul_rate},
+	{Title: "Location", Width: fullPathWidth * mul_rate},
 }
 
 var numTableRows int = 20
@@ -66,7 +66,7 @@ func initialModel() model {
 
 	var allRows = []table.Row{}
 	for i, tf := range trashfiles {
-		tmp := []string{strconv.Itoa(i + 1), tf.InFolder, strconv.FormatInt(tf.Size, 10), tf.DateDeleted.Format("2006-01-02T15:04:05Z07:00"), tf.Normal}
+		tmp := []string{strconv.Itoa(i + 1), tf.filename, strconv.FormatInt(tf.size, 10), tf.dateDeleted.Format("2006-01-02T15:04:05Z07:00"), tf.location}
 		allRows = append(allRows, tmp)
 	}
 
@@ -276,7 +276,7 @@ func main() {
 
 	if isList {
 		fmt.Println("")
-		fmt.Println("# Trash Box #")
+		fmt.Println("🗑️ TrashBox 🗑️")
 		err := PrintTrashBoxItems()
 		if err != nil {
 			fmt.Println("go-trash: ", err)
