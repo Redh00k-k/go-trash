@@ -407,6 +407,82 @@ func getFileSize(rbInternalFormat []byte) int64 {
 	return fsize
 }
 
+func GetTrashBoxItems() ([]fi, error) {
+	ret, _ := _CoInitialize(uintptr(0))
+	if ret != 0 {
+		// Call FormatMessage API to display correct errors.
+		return nil, _FormatMessage(ret)
+	}
+
+	var pRecycleBinFolder *IShellFolder
+	ret, _ = GetRecycleBinShellFolder(&pRecycleBinFolder)
+	if ret != 0 {
+		return nil, _FormatMessage(ret)
+	}
+	defer pRecycleBinFolder.Release()
+
+	var pEnum *IEnumIDList
+	ret = pRecycleBinFolder.EnumObjects(0, SHCONTF_FOLDERS|SHCONTF_NONFOLDERS, &pEnum)
+	if ret != 0 {
+		fmt.Println("Failed to enumerate Recycle Bin items.")
+		return nil, _FormatMessage(ret)
+	}
+	defer pEnum.Release()
+
+	var files []fi
+	var pItemIDL *ITEMIDLIST
+	for {
+		ret = pEnum.Next(1, &pItemIDL, nil)
+		if ret != 0 {
+			break
+		}
+		var file fi
+
+		GetDisplayName(&file, pRecycleBinFolder, pItemIDL, SHGDN_INFOLDER, "InFolder")
+		GetDisplayName(&file, pRecycleBinFolder, pItemIDL, SHGDN_NORMAL, "Normal\t")
+		GetDisplayName(&file, pRecycleBinFolder, pItemIDL, SHGDN_FORPARSING, "ForParsing")
+		GetDisplayName(&file, pRecycleBinFolder, pItemIDL, SHGDN_FORPARSING, "DateDeleted")
+		GetDisplayName(&file, pRecycleBinFolder, pItemIDL, SHGDN_FORPARSING, "Size\t")
+		files = append(files, file)
+
+		CoTaskMemFree(uintptr(unsafe.Pointer(pItemIDL)))
+	}
+
+	_CoUninitialize()
+	return files, nil
+}
+
+func GetDisplayName(file *fi, psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, label string) {
+	var pName STRRET
+	ret := psf.GetDisplayNameOf(pidl, uFlags, &pName)
+	if ret != 0 {
+		return
+	}
+
+	if strings.Contains(label, "DateDelete") || strings.Contains(label, "Size") {
+		recycleDir := filepath.Dir(CStringToString(*pName.pOleStr()))
+		ipath := strings.Replace(filepath.Base(CStringToString(*pName.pOleStr())), "$R", "$I", 1)
+
+		// Version 2 (Introduced somewhere in a Windows 10 release)
+		// https://github.com/danielmarschall/recyclebinunit/blob/master/FORMAT.md#version-2-introduced-somewhere-in-a-windows-10-release
+		buf := make([]byte, 24)
+		f, _ := os.Open(recycleDir + "\\" + ipath)
+		f.Read(buf)
+
+		if strings.Contains(label, "DateDelete") {
+			file.DateDeleted = getDateDelete(buf).Local()
+		} else if strings.Contains(label, "Size") {
+			file.Size = getFileSize(buf)
+		}
+	} else if strings.Contains(label, "InFolder") {
+		file.InFolder = CStringToString(*pName.pOleStr())
+	} else if strings.Contains(label, "Normal") {
+		file.Normal = CStringToString(*pName.pOleStr())
+	} else if strings.Contains(label, "ForParsing") {
+		file.ForParsing = CStringToString(*pName.pOleStr())
+	}
+}
+
 func PrintDisplayName(psf *IShellFolder, pidl *ITEMIDLIST, uFlags uint32, label string) {
 	var pName STRRET
 	ret := psf.GetDisplayNameOf(pidl, uFlags, &pName)
