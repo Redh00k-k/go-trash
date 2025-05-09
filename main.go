@@ -14,8 +14,16 @@ import (
 	"github.com/pborman/getopt/v2"
 )
 
+type fi struct {
+	InFolder    string
+	Normal      string
+	ForParsing  string
+	DateDeleted time.Time
+	Size        int64
+}
+
 const (
-	mainView uint = iota
+	tableView uint = iota
 	detailView
 )
 
@@ -24,8 +32,9 @@ type model struct {
 	allRows       []table.Row
 	textInput     textinput.Model
 	filteredInput string
-	state         uint
+	viewstate     uint
 	isfilter      bool
+	selectedRow   table.Row
 }
 
 var mul_rate int = 5
@@ -42,8 +51,8 @@ var columns = []table.Column{
 	{Title: "#", Width: numWidth * mul_rate},
 	{Title: "Name", Width: nameWidth * mul_rate},
 	{Title: "Size", Width: sizeWidth * mul_rate},
-	{Title: "DateDeleted", Width: dateDeleteWidth * mul_rate},
-	{Title: "FullPath", Width: fullPathWidth * mul_rate},
+	{Title: "Date Deleted", Width: dateDeleteWidth * mul_rate},
+	{Title: "Original FullPath", Width: fullPathWidth * mul_rate},
 }
 
 var numTableRows int = 20
@@ -63,7 +72,7 @@ func initialModel() model {
 
 	// Create the input
 	ti := textinput.New()
-	ti.Placeholder = "Filter..."
+	ti.Placeholder = "…"
 	ti.Focus()
 
 	// Create the table
@@ -131,6 +140,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case msg.String() == "ctrl+c" || msg.String() == "esc":
+			if m.viewstate == detailView {
+				m.viewstate = tableView
+				return m, nil
+			}
+
 			// Cancel filter
 			if m.isfilter {
 				m.isfilter = false
@@ -155,8 +169,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Reset()
 				return m, nil
 			}
+
+			if m.viewstate == tableView {
+				cursor := m.table.Cursor()
+				if cursor < len(m.table.Rows()) {
+					m.selectedRow = m.table.Rows()[cursor]
+					m.viewstate = detailView
+				}
+			} else if m.viewstate == detailView {
+				m.viewstate = tableView
+			}
 		}
 	}
+
 	// Update input only if filtering
 	if m.isfilter {
 		m.textInput, cmd = m.textInput.Update(msg)
@@ -169,26 +194,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	var sb strings.Builder
+	switch m.viewstate {
+	case tableView:
+		// Header
+		sb.WriteString("🗑️ TrashBox Viewer 🗑️\n\n")
 
-	// Header
-	sb.WriteString("📋TrashBox Viewer\n\n")
+		// Filter
+		if m.isfilter {
+			sb.WriteString("🔍 Filtering: " + m.textInput.View() + "\n\n")
+		}
 
-	// Filter.
-	if m.isfilter {
-		sb.WriteString("🔍 Filtering: " + m.textInput.View() + "\n\n")
+		// Body(Table)
+		sb.WriteString(m.table.View())
+
+		// Footer
+		sb.WriteString("\n\n")
+		if m.isfilter {
+			sb.WriteString("[Enter]: apply filter  [Esc]:cancel filter\n")
+		} else {
+			sb.WriteString("[/]:start filter  [Esc]:quit\n")
+		}
+
+	case detailView:
+		// Header
+		sb.WriteString("📋 Detail Viewer 📋\n\n")
+
+		// TODO: Show contents
+		// Body
+		for i, v := range m.selectedRow {
+			sb.WriteString(fmt.Sprintf("%-18s: %s\n", columns[i].Title, v))
+		}
+
+		// Footer
+		sb.WriteString("\n\n")
+		sb.WriteString("[r]:Restore file [Esc]:quit\n")
 	}
-
-	// Table
-	sb.WriteString(m.table.View())
-
-	// Footer
-	sb.WriteString("\n\n")
-	if m.isfilter {
-		sb.WriteString("[Enter]: apply filter  [Esc]:cancel filter\n")
-	} else {
-		sb.WriteString("[/]:start filter  [Esc]:quit\n")
-	}
-
 	return sb.String()
 }
 
@@ -209,39 +249,22 @@ func filterRows(rows []table.Row, keyword string) []table.Row {
 	return filtered
 }
 
-type fi struct {
-	InFolder    string
-	Normal      string
-	ForParsing  string
-	DateDeleted time.Time
-	Size        int64
-}
-
 func main() {
 	var (
 		isList       = false
 		isHelp       = false
 		undeleteFile = ""
 		outputPath   = ""
-		tuiMode      = false
+		isTuiMode    = false
 	)
 
 	getopt.Flag(&isList, 'l', "List trashed files")
 	getopt.Flag(&isHelp, 'h', "Show help")
 	getopt.Flag(&undeleteFile, 'u', "Restore files to original location", "File")
 	getopt.Flag(&outputPath, 'o', "Output file to location", "File")
-	getopt.Flag(&tuiMode, 't', "Run TUI mode")
+	getopt.Flag(&isTuiMode, 't', "Run TUI mode")
 	getopt.Parse()
 	args := getopt.Args()
-
-	if tuiMode || len(args) == 0 {
-		p := tea.NewProgram(initialModel())
-		if _, err := p.Run(); err != nil {
-			fmt.Printf("Alas, there's been an error: %v", err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
 
 	if len(undeleteFile) != 0 {
 		err := RestoreItem(undeleteFile, outputPath)
@@ -251,7 +274,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	if isList == true {
+	if isList {
 		fmt.Println("")
 		fmt.Println("# Trash Box #")
 		err := PrintTrashBoxItems()
@@ -265,6 +288,15 @@ func main() {
 	if isHelp {
 		getopt.Usage()
 		os.Exit(1)
+	}
+
+	if isTuiMode || len(args) == 0 {
+		p := tea.NewProgram(initialModel())
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Alas, there's been an error: %v", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 
 	for _, path := range args {
