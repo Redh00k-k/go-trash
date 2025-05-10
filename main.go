@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pborman/getopt/v2"
@@ -169,18 +171,50 @@ func (m tableModel) View() string {
 
 // Detail
 type detailModel struct {
-	row       table.Row
-	trashList []fi
+	row        table.Row
+	trashList  []fi
+	viewport   viewport.Model
+	showViewer bool
 }
 
 func (m detailModel) Init() tea.Cmd {
 	return nil
 }
 
+func isTextFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	textExts := []string{".txt", ".md", ".go", ".json", ".xml", ".sh", ".log", ".csv", ".bat"}
+	for _, e := range textExts {
+		if ext == e {
+			return true
+		}
+	}
+	return false
+}
+
 func newDetailModel(row table.Row, trashList []fi, width int, height int) detailModel {
+	idx, _ := strconv.Atoi(row[0])
+	item := trashList[idx]
+
+	vm := viewport.New(width, height)
+	show := false
+
+	if isTextFile(item.inTrashBox) {
+		content, err := os.ReadFile(item.inTrashBox)
+		if err == nil {
+			vm.SetContent(string(content))
+			show = true
+		} else {
+			vm.SetContent("Error reading file: " + err.Error())
+			show = true
+		}
+	}
+
 	return detailModel{
-		row:       row,
-		trashList: trashList,
+		row:        row,
+		trashList:  trashList,
+		viewport:   vm,
+		showViewer: show,
 	}
 }
 
@@ -195,18 +229,41 @@ func (m detailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.showViewer {
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
+
+var (
+	titleStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("229")).
+			Bold(true).
+			Underline(true)
+	contentStyle = lipgloss.NewStyle().
+			MarginTop(1).
+			Padding(1, 2).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Width(80)
+)
 
 func (m detailModel) View() string {
 	var sb strings.Builder
 
 	// Header
-	sb.WriteString("📋 Detail Viewer" + "\n\n")
+	sb.WriteString(titleStyle.Render("📋 Detail Viewer") + "\n\n")
 
 	// Body
 	for i, v := range m.row {
 		sb.WriteString(fmt.Sprintf("%-18s: %s\n", columns[i].Title, v))
+	}
+	// file contents
+	if m.showViewer {
+		sb.WriteString(contentStyle.Render((m.viewport.View())))
 	}
 
 	// Footer
