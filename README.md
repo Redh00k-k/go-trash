@@ -18,7 +18,7 @@ Usage: go-trash [-hlt] [-o File] [-u File] [parameters ...]
 Display the contents of the trash  (~/.local/share/Trash)
 ![](./img/tui_1.png)
 
-
+Press `Enter` toggle to detail mode
 TBD: Preview file
 ![](./img/tui_2.png)
 
