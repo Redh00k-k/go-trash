@@ -114,32 +114,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	// case tea.WindowSizeMsg:
-	// wW := msg.Width
-	// wH := msg.Height
-
-	// reservedLines := numTableRows
-	// if m.isfilter {
-	// 	reservedLines += 2
-	// }
-
-	// usableHeight := msg.Height - reservedLines
-	// if usableHeight < 3 {
-	// 	usableHeight = 3
-	// }
-
-	// m.table.SetHeight(usableHeight)
-	// m.table.SetColumns(columns)
-
-	// m.table.SetWidth(msg.Width - mul_rate)
-	// m.table.SetHeight(msg.Height - mul_rate)
-	// w := m.table.Width() - 6
-	// columns[0].Width = w * numWidth / 20        // #
-	// columns[1].Width = w * nameWidth / 20       // Name
-	// columns[2].Width = w * sizeWidth / 20       // Size
-	// columns[3].Width = w * dateDeleteWidth / 20 // DateDeleted
-	// columns[4].Width = w * fullPathWidth / 20   // FullPath
-	// m.table.SetColumns(columns)
 	case tea.KeyMsg:
 		switch {
 		case msg.String() == "ctrl+c" || msg.String() == "esc":
