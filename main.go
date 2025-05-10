@@ -94,7 +94,7 @@ func initialModel() model {
 		Bold(true)
 	s.Selected = s.Selected.
 		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
+		Background(lipgloss.Color("29")).
 		Bold(false)
 	t.SetStyles(s)
 
