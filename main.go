@@ -18,6 +18,7 @@ import (
 )
 
 type fi struct {
+	id          string // I know bad. but the type use in []table.Row{} is string
 	filename    string
 	location    string
 	inTrashBox  string
@@ -50,6 +51,10 @@ type tableModel struct {
 	isfilter  bool
 	allRows   []table.Row
 	trashList []fi
+}
+
+type RowsUpdatedMsg struct {
+	Rows []table.Row
 }
 
 var numTableRows int = 20
@@ -108,12 +113,32 @@ func (m tableModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "U":
 			cursor := m.table.Cursor()
 			if cursor < len(m.table.Rows()) {
-				Undelete(m.trashList[cursor].inTrashBox, m.trashList[cursor].location)
-			}
-			m.allRows = append(m.allRows[:cursor], m.allRows[cursor+1:]...)
-			m.trashList = append(m.trashList[:cursor], m.trashList[cursor+1:]...)
-			m.table.SetRows(m.allRows)
+				// Get ID
+				id := m.table.Rows()[cursor][0]
 
+				// remove fi from trashList
+				for i, f := range m.trashList {
+					if f.id == id {
+						Undelete(f.inTrashBox, f.location)
+						m.trashList = append(m.trashList[:i], m.trashList[i+1:]...)
+						break
+					}
+				}
+				// Remove from allRows
+				for i := range m.allRows {
+					if m.allRows[i][0] == id {
+						m.allRows = append(m.allRows[:i], m.allRows[i+1:]...)
+						break
+					}
+				}
+				// update table view
+				m.table.SetRows(m.allRows)
+
+				// update rows to mainModel
+				return m, func() tea.Msg {
+					return RowsUpdatedMsg{Rows: m.allRows}
+				}
+			}
 		case msg.String() == "/":
 			m.isfilter = true
 			m.textInput.Focus()
@@ -193,8 +218,14 @@ func isTextFile(path string) bool {
 }
 
 func newDetailModel(row table.Row, trashList []fi, width int, height int) detailModel {
-	idx, _ := strconv.Atoi(row[0])
-	item := trashList[idx]
+	id := row[0]
+	var item fi
+	for _, f := range trashList {
+		if f.id == id {
+			item = f
+			break
+		}
+	}
 
 	vm := viewport.New(width, height)
 	show := false
@@ -255,7 +286,7 @@ func (m detailModel) View() string {
 	var sb strings.Builder
 
 	// Header
-	sb.WriteString(titleStyle.Render("📋 Detail Viewer") + "\n\n")
+	sb.WriteString(titleStyle.Render("📋 Detail Viewer 📋") + "\n\n")
 
 	// Body
 	for i, v := range m.row {
@@ -268,8 +299,7 @@ func (m detailModel) View() string {
 
 	// Footer
 	sb.WriteString("\n\n")
-	sb.WriteString("[U]:Undelete file  [Esc]: Back\n")
-
+	sb.WriteString("[Esc]: Back\n")
 	return sb.String()
 }
 
@@ -288,6 +318,10 @@ func (m mainModel) Init() tea.Cmd {
 
 func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case RowsUpdatedMsg:
+		m.rows = msg.Rows
+		return m, nil
+
 	case changeViewMsg:
 		if msg.toView == tableView {
 			tm := newTableModel(m.rows, m.trashList)
@@ -336,8 +370,11 @@ func initialModel() mainModel {
 
 	var allRows = []table.Row{}
 	for i, tf := range trashList {
-		tmp := []string{strconv.Itoa(i), tf.filename, strconv.FormatInt(tf.size, 10), tf.dateDeleted.Format("2006-01-02T15:04:05Z07:00"), tf.location}
-		allRows = append(allRows, tmp)
+		// add ID
+		tf.id = strconv.Itoa(i + 1)
+		trashList[i] = tf
+		row := []string{tf.id, tf.filename, strconv.FormatInt(tf.size, 10), tf.dateDeleted.Format(time.RFC3339), tf.location}
+		allRows = append(allRows, row)
 	}
 
 	// Create the input
