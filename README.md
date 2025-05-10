@@ -1,17 +1,36 @@
 # go-trash
 The `go-trash` is simple CLI, that move files and folder to the trashbox written in Go.
-Works on Linux and Windows 10.
+Works on Linux and Windows 11.
 
-## Usage
+# Usage
 ```
 $ ./go-trash -h
-Usage: go-trash [-hl] [-o File] [-u File] [parameters ...]
+Usage: go-trash [-hlt] [-o File] [-u File] [parameters ...]
  -h       Show help
  -l       List trashed files
  -o File  Output file to location
+ -t       Run TUI mode
  -u File  Restore files to original location
 ```
 
+## TUI 
+### Display mode
+Display the contents of the trash  (~/.local/share/Trash)
+![](./img/tui_1.png)
+
+
+TBD: Preview file
+![](./img/tui_2.png)
+
+### Undelete
+Press `U` to undelete file to its original location.
+
+### Fileter
+Press `/` to display filter.
+![](./img/tui_3.png)
+
+
+## CUI 
 ### Trash
 * Windows
 ```
@@ -28,36 +47,38 @@ C:\Users\user\Desktop> go-trash.exe aaa.txt bbb_dir
 ```
 C:\Users\user\Desktop> go-trash.exe -l
 
-# Trash Box #
+🗑️ TrashBox 🗑️
 
-InFolder        : aaa.txt
-Normal          : C:\Users\user\Desktop\aaa.txt
-ForParsing      : C:\$RECYCLE.BIN\S-xxx\$RABCD.txt
-DateDeleted     : 2023/1/2 12:34:56
-Size            : 1234
+FileName    : aaa.txt
+Location    : C:\Users\user\Desktop\aaa.txt
+InTrashBox  : C:\$RECYCLE.BIN\S-xxx\$RABCD.txt
+DateDeleted : 2023/1/2 12:34:56
+Size        : 1234
 
-InFolder        : bbb_dir
-Normal          : C:\Users\user\Desktop\bbb_dir
-ForParsing      : C:\$RECYCLE.BIN\S-xxx\$R1C0U4Q
-DateDeleted     : 2023/1/2 12:34:56
-Size            : 0
+FileName    : bbb_dir
+Location    : C:\Users\user\Desktop\bbb_dir
+InTrashBox  : C:\$RECYCLE.BIN\S-xxx\$R1C0U4Q
+DateDeleted : 2023/1/2 12:34:56
+Size        : 0
 ```
 
 * Linux
 ```
 ~$ ./go-trash -l
 
-# Trash Box #
+🗑️ TrashBox 🗑️
 
-FileName        : aaa.txt
-Location        : /home/user/aaa.txt
-DeletedDate     : 2023-01-23T12:34:56
-Size            : 1234
+FileName    : aaa.txt
+Location    : /home/user/aaa.txt
+InTrashBox  : /home/user/.local/share/Trash/files/aaa.txt
+DateDeleted : 2023-01-23T12:34:56
+Size        : 1234
 
-FileName        : bbb_dir
-Location        : /home/user/bbb_dir
-DeletedDate     : 2023-01-23T12:34:56
-Size            : 0
+FileName    : bbb_dir
+Location    : /home/user/bbb_dir
+InTrashBox  : /home/user/.local/share/Trash/files/bbb_dir
+DateDeleted : 2023-01-23T12:34:56
+Size        : 0
 ```
 
 
