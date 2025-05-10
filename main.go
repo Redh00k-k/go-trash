@@ -23,51 +23,262 @@ type fi struct {
 	size        int64
 }
 
+var columns = []table.Column{
+	{Title: "#", Width: 5},
+	{Title: "Name", Width: 20},
+	{Title: "Size", Width: 10},
+	{Title: "Date Deleted", Width: 25},
+	{Title: "Location", Width: 40},
+}
+
+type changeViewMsg struct {
+	toView uint
+	row    table.Row
+}
+
 const (
 	tableView uint = iota
 	detailView
 )
 
-type model struct {
-	table         table.Model
-	allRows       []table.Row
-	textInput     textinput.Model
-	filteredInput string
-	viewstate     uint
-	isfilter      bool
-	selectedRow   table.Row
-	trashList     []fi
-}
-
-var mul_rate int = 5
-
-const (
-	numWidth        int = 1
-	nameWidth       int = 4
-	sizeWidth       int = 2
-	dateDeleteWidth int = 6
-	fullPathWidth   int = 10
-)
-
-var columns = []table.Column{
-	{Title: "#", Width: numWidth * mul_rate},
-	{Title: "Name", Width: nameWidth * mul_rate},
-	{Title: "Size", Width: sizeWidth * mul_rate},
-	{Title: "Date Deleted", Width: dateDeleteWidth * mul_rate},
-	{Title: "Location", Width: fullPathWidth * mul_rate},
+// Table
+type tableModel struct {
+	table     table.Model
+	textInput textinput.Model
+	isfilter  bool
+	allRows   []table.Row
+	trashList []fi
 }
 
 var numTableRows int = 20
 
-func initialModel() model {
-	trash, err := GetTrashBoxItems()
+func newTableModel(rows []table.Row, trashList []fi) tableModel {
+	// Create the input
+	ti := textinput.New()
+	ti.Placeholder = "…"
+	ti.Focus()
+
+	// Create the table
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(numTableRows+1), // table rows + title
+	)
+
+	// ref: https://github.com/charmbracelet/bubbletea/blob/main/examples/table/main.go
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(true)
+	s.Selected = s.Selected.
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("29")).
+		Bold(false)
+	t.SetStyles(s)
+
+	return tableModel{
+		table:     t,
+		textInput: ti,
+		allRows:   rows,
+		trashList: trashList,
+	}
+}
+
+func (m tableModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m tableModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case msg.String() == "ctrl+c" || msg.String() == "esc":
+			// Cancel filter
+			if m.isfilter {
+				m.isfilter = false
+				m.textInput.Reset()
+				return m, nil
+			}
+			return m, tea.Quit
+		case msg.String() == "U":
+			cursor := m.table.Cursor()
+			if cursor < len(m.table.Rows()) {
+				Undelete(m.trashList[cursor].inTrashBox, m.trashList[cursor].location)
+			}
+			m.allRows = append(m.allRows[:cursor], m.allRows[cursor+1:]...)
+			m.trashList = append(m.trashList[:cursor], m.trashList[cursor+1:]...)
+			m.table.SetRows(m.allRows)
+
+		case msg.String() == "/":
+			m.isfilter = true
+			m.textInput.Focus()
+			return m, textinput.Blink
+		case msg.String() == "enter":
+			if m.isfilter {
+				keyword := m.textInput.Value()
+				m.table.SetRows(filterRows(m.allRows, keyword))
+				m.isfilter = false
+				m.textInput.Reset()
+				return m, nil
+			}
+			cursor := m.table.Cursor()
+			if cursor < len(m.table.Rows()) {
+				return m, func() tea.Msg {
+					return changeViewMsg{
+						toView: detailView,
+						row:    m.table.Rows()[cursor],
+					}
+				}
+			}
+		}
+	}
+	if m.isfilter {
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
+	m.table, _ = m.table.Update(msg)
+	return m, nil
+}
+
+func (m tableModel) View() string {
+	var sb strings.Builder
+	// Header
+	sb.WriteString("🗑️ TrashBox Viewer 🗑️\n\n")
+
+	// Filter
+	if m.isfilter {
+		sb.WriteString("🔍 Filtering: " + m.textInput.View() + "\n\n")
+	}
+
+	// Body(Table)
+	sb.WriteString(m.table.View())
+
+	// Footer
+	sb.WriteString("\n\n")
+	if m.isfilter {
+		sb.WriteString("[Enter]: apply filter  [Esc]:cancel filter\n")
+	} else {
+		sb.WriteString("[/]:start filter [U]:Undelete file [Esc]:quit\n")
+	}
+	return sb.String()
+}
+
+// Detail
+type detailModel struct {
+	row       table.Row
+	trashList []fi
+}
+
+func (m detailModel) Init() tea.Cmd {
+	return nil
+}
+
+func newDetailModel(row table.Row, trashList []fi, width int, height int) detailModel {
+	return detailModel{
+		row:       row,
+		trashList: trashList,
+	}
+}
+
+func (m detailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case msg.String() == "ctrl+c" || msg.String() == "esc":
+			return m, func() tea.Msg {
+				return changeViewMsg{toView: tableView}
+			}
+		}
+	}
+
+	return m, nil
+}
+
+func (m detailModel) View() string {
+	var sb strings.Builder
+
+	// Header
+	sb.WriteString("📋 Detail Viewer" + "\n\n")
+
+	// Body
+	for i, v := range m.row {
+		sb.WriteString(fmt.Sprintf("%-18s: %s\n", columns[i].Title, v))
+	}
+
+	// Footer
+	sb.WriteString("\n\n")
+	sb.WriteString("[U]:Undelete file  [Esc]: Back\n")
+
+	return sb.String()
+}
+
+// main
+type mainModel struct {
+	viewstate uint
+	sub       tea.Model
+	rows      []table.Row
+	trashList []fi
+	textInput textinput.Model
+}
+
+func (m mainModel) Init() tea.Cmd {
+	return m.sub.Init()
+}
+
+func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case changeViewMsg:
+		if msg.toView == tableView {
+			tm := newTableModel(m.rows, m.trashList)
+			m.viewstate = tableView
+			m.sub = tm
+			return m, tm.Init()
+		} else if msg.toView == detailView {
+			dm := newDetailModel(msg.row, m.trashList, 80, 20)
+			m.viewstate = detailView
+			m.sub = dm
+			return m, dm.Init()
+		}
+	}
+	subModel, cmd := m.sub.Update(msg)
+	m.sub = subModel
+	return m, cmd
+}
+
+func (m mainModel) View() string {
+	return m.sub.View()
+}
+
+// fileter Helper
+func filterRows(rows []table.Row, keyword string) []table.Row {
+	if keyword == "" {
+		return rows
+	}
+	var filtered []table.Row
+	for _, row := range rows {
+		for _, col := range row {
+			if strings.Contains(strings.ToLower(col), strings.ToLower(keyword)) {
+				filtered = append(filtered, row)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func initialModel() mainModel {
+	trashList, err := GetTrashBoxItems()
 	if err != nil {
 		fmt.Println("go-trash: ", err)
 		os.Exit(1)
 	}
 
 	var allRows = []table.Row{}
-	for i, tf := range trash {
+	for i, tf := range trashList {
 		tmp := []string{strconv.Itoa(i), tf.filename, strconv.FormatInt(tf.size, 10), tf.dateDeleted.Format("2006-01-02T15:04:05Z07:00"), tf.location}
 		allRows = append(allRows, tmp)
 	}
@@ -98,145 +309,14 @@ func initialModel() model {
 		Bold(false)
 	t.SetStyles(s)
 
-	return model{
-		table:     t,
-		allRows:   allRows,
+	start := newTableModel(allRows, trashList)
+	return mainModel{
+		viewstate: tableView,
+		sub:       start,
+		rows:      allRows,
 		textInput: ti,
-		trashList: trash,
+		trashList: trashList,
 	}
-}
-
-func (m model) Init() tea.Cmd {
-	return textinput.Blink
-}
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch {
-		case msg.String() == "ctrl+c" || msg.String() == "esc":
-			if m.viewstate == detailView {
-				m.viewstate = tableView
-				return m, nil
-			}
-
-			// Cancel filter
-			if m.isfilter {
-				m.isfilter = false
-				m.textInput.Reset()
-				return m, nil
-			}
-			return m, tea.Quit
-
-		case msg.String() == "/":
-			// Filter
-			if !m.isfilter {
-				m.isfilter = true
-				m.textInput.Focus()
-				return m, textinput.Blink
-			}
-		case msg.String() == "U":
-			cursor := m.table.Cursor()
-			if cursor < len(m.table.Rows()) {
-				Undelete(m.trashList[cursor].inTrashBox, m.trashList[cursor].location)
-			}
-			m.allRows = append(m.allRows[:cursor], m.allRows[cursor+1:]...)
-			m.trashList = append(m.trashList[:cursor], m.trashList[cursor+1:]...)
-			m.table.SetRows(m.allRows)
-
-			if m.viewstate == detailView {
-				m.viewstate = tableView
-			}
-
-		case msg.Type == tea.KeyEnter:
-			if m.isfilter {
-				m.filteredInput = m.textInput.Value()
-				filteredRows := filterRows(m.allRows, m.filteredInput)
-				m.table.SetRows(filteredRows)
-				m.isfilter = false
-				m.textInput.Reset()
-				return m, nil
-			}
-
-			if m.viewstate == tableView {
-				cursor := m.table.Cursor()
-				if cursor < len(m.table.Rows()) {
-					m.selectedRow = m.table.Rows()[cursor]
-					m.viewstate = detailView
-				}
-			} else if m.viewstate == detailView {
-				m.viewstate = tableView
-			}
-		}
-	}
-
-	// Update input only if filtering
-	if m.isfilter {
-		m.textInput, cmd = m.textInput.Update(msg)
-	}
-
-	m.table, _ = m.table.Update(msg)
-
-	return m, cmd
-}
-
-func (m model) View() string {
-	var sb strings.Builder
-	switch m.viewstate {
-	case tableView:
-		// Header
-		sb.WriteString("🗑️ TrashBox Viewer 🗑️\n\n")
-
-		// Filter
-		if m.isfilter {
-			sb.WriteString("🔍 Filtering: " + m.textInput.View() + "\n\n")
-		}
-
-		// Body(Table)
-		sb.WriteString(m.table.View())
-
-		// Footer
-		sb.WriteString("\n\n")
-		if m.isfilter {
-			sb.WriteString("[Enter]: apply filter  [Esc]:cancel filter\n")
-		} else {
-			sb.WriteString("[/]:start filter [U]:Undelete file [Esc]:quit\n")
-		}
-
-	case detailView:
-		// Header
-		sb.WriteString("📋 Detail Viewer 📋\n\n")
-
-		// TODO: Show contents
-		// Body
-		for i, v := range m.selectedRow {
-			sb.WriteString(fmt.Sprintf("%-18s: %s\n", columns[i].Title, v))
-		}
-
-		// Footer
-		sb.WriteString("\n\n")
-		sb.WriteString("[U]:Undelete file [Esc]:quit\n")
-	}
-	return sb.String()
-}
-
-func filterRows(rows []table.Row, keyword string) []table.Row {
-	if keyword == "" {
-		return rows
-	}
-
-	var filtered []table.Row
-	for _, row := range rows {
-		for _, col := range row {
-			if strings.Contains(strings.ToLower(col), strings.ToLower(keyword)) {
-				filtered = append(filtered, row)
-				break
-			}
-		}
-	}
-	return filtered
 }
 
 func main() {
@@ -321,6 +401,7 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Move to trash
 	for _, path := range args {
 		err := MoveToTrashBox(path)
 		if err != nil {
