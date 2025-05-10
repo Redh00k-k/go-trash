@@ -33,15 +33,11 @@ func decodeLine(pl []string) string {
 	return decodedFilePath
 }
 
-func printDisplayName(line string, label string) {
-	fmt.Printf("%s\t: %s\n", label, line)
-}
-
-func PrintTrashBoxItems() (ret error) {
+func GetTrashBoxItems() ([]fi, error) {
 	user, err := user.Current()
 	if err != nil {
 		fmt.Errorf("Failure to get user's home directory: %s", err)
-		return err
+		return nil, err
 	}
 
 	// Contents of a trash directory
@@ -52,9 +48,10 @@ func PrintTrashBoxItems() (ret error) {
 	allFiles, err := ioutil.ReadDir(trashBase + "/files/")
 	if err != nil {
 		fmt.Errorf("Failure to get files in ~/.local/share/Trash : %s", err)
-		return err
+		return nil, err
 	}
 
+	var files []fi
 	for _, file := range allFiles {
 		infoFilePath := trashBase + "/info/" + file.Name() + ".trashinfo"
 		filesFilePath := trashBase + "/files/" + file.Name()
@@ -88,18 +85,43 @@ func PrintTrashBoxItems() (ret error) {
 				continue
 			}
 		}
-		fi, err := fFile.Stat()
+
+		fs, err := fFile.Stat()
 		if err != nil {
 			fmt.Printf("Failure to open file: %s\n", err)
 		}
 
-		fmt.Println()
-		printDisplayName(filepath.Base(decodedFilePath), "FileName")
-		printDisplayName(decodedFilePath, "Location")
-		printDisplayName(deletedDate, "DeletedDate")
-		printDisplayName(strconv.FormatInt(fi.Size(), 10), "Size\t")
+		var file fi
+
+		file.filename = filepath.Base(decodedFilePath)
+		file.location = decodedFilePath
+		file.inTrashBox = filesFilePath
+		file.dateDeleted, _ = time.Parse("2006-01-02T15:04:05Z07:00", deletedDate)
+		file.size = fs.Size()
+		files = append(files, file)
 	}
 
+	return files, nil
+}
+
+func printDisplayName(line string, label string) {
+	fmt.Printf("%-12s: %s\n", label, line)
+}
+
+func PrintTrashBoxItems() (ret error) {
+	files, err := GetTrashBoxItems()
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		fmt.Println()
+		printDisplayName(file.filename, "FileName")
+		printDisplayName(file.location, "Location")
+		printDisplayName(file.inTrashBox, "InTrashBox")
+		printDisplayName(file.dateDeleted.Format("2006-01-02T15:04:05Z07:00"), "DateDeleted")
+		printDisplayName(strconv.FormatInt(file.size, 10), "Size")
+	}
 	return nil
 }
 
@@ -121,6 +143,14 @@ func MoveToTrashBox(path string) (err error) {
 	}
 
 	trashBase := strings.Replace("~/.local/share/Trash", "~", user.HomeDir, 1)
+	if _, err := os.Stat(trashBase + "/info/"); err != nil {
+		os.MkdirAll(trashBase+"/info/", os.ModePerm)
+	}
+
+	if _, err := os.Stat(trashBase + "/files/"); err != nil {
+		os.MkdirAll(trashBase+"/files/", os.ModePerm)
+	}
+
 	err = os.WriteFile(trashBase+"/info/"+filename+".trashinfo", []byte(convertTrashInfo(info)), os.ModePerm)
 	if err != nil {
 		return err
@@ -137,87 +167,7 @@ func MoveToTrashBox(path string) (err error) {
 	return nil
 }
 
-type fileInfo struct {
-	originalPath      string
-	trashboxFilesPath string
-	trashboxInfoPath  string
-	dateDelete        string
-	size              int64
-}
-
-func addMatchedFileList(fl []fileInfo, infoFilePath string, filesFilePath string) []fileInfo {
-	iFile, err := os.Open(infoFilePath)
-	if err != nil {
-		fmt.Printf("Failure to open file: %s", err)
-		return fl
-	}
-	defer iFile.Close()
-
-	fFile, err := os.Open(filesFilePath)
-	if err != nil {
-		fmt.Printf("Failure to open file: %s", err)
-		return fl
-	}
-	defer fFile.Close()
-
-	var decodedFilePath string
-	var deletedDate string
-	// Read one line at a time, as the order of 'Path' and 'DeletionDate' may be different
-	scanner := bufio.NewScanner(iFile)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if pl := parseLine(line, "Path="); len(pl) > 1 {
-			decodedFilePath, _ = url.QueryUnescape(pl[1])
-		} else if pl := parseLine(line, "DeletionDate="); len(pl) > 1 {
-			deletedDate = pl[1]
-		} else {
-			// "[Trash Info]"
-			continue
-		}
-	}
-	fs, err := fFile.Stat()
-	if err != nil {
-		fmt.Printf("Failure to open file: %s", err)
-	}
-
-	// assign value to fileInfo
-	var fi fileInfo
-	fi.originalPath = decodedFilePath
-	fi.trashboxFilesPath = filesFilePath
-	fi.trashboxInfoPath = infoFilePath
-	fi.dateDelete = deletedDate
-	fi.size = fs.Size()
-
-	return append(fl, fi)
-}
-
-func unDelete(id uint, fl []fileInfo, outputPath string) (err error) {
-	if uint(len(fl)) <= id {
-		return fmt.Errorf("Index out of range")
-	}
-	var path string
-	if len(outputPath) == 0 {
-		// assign original location to 'path'
-		path = fl[id].originalPath
-	} else {
-		path, _ = filepath.Abs(outputPath)
-	}
-	fmt.Printf("Restore %s → %s\n", fl[id].trashboxFilesPath, path)
-
-	err = os.Rename(fl[id].trashboxFilesPath, path)
-	if err != nil {
-		return err
-	}
-
-	err = os.Remove(fl[id].trashboxInfoPath)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func RestoreItem(filename string, outputPath string) (ret error) {
+func Undelete(srcPath string, dstPath string) (err error) {
 	user, err := user.Current()
 	if err != nil {
 		return err
@@ -226,40 +176,17 @@ func RestoreItem(filename string, outputPath string) (ret error) {
 	// Contents of a trash directory
 	// https://specifications.freedesktop.org/trash-spec/trashspec-1.0.html
 	trashBase := strings.Replace("~/.local/share/Trash", "~", user.HomeDir, 1)
+	infoFilePath := trashBase + "/info/" + filepath.Base(srcPath) + ".trashinfo"
 
-	// Generate fullPath from .~/.local/share/Trash/files/
-	allFiles, err := os.ReadDir(trashBase + "/files/")
+	err = os.Rename(srcPath, dstPath)
 	if err != nil {
 		return err
 	}
 
-	var fl []fileInfo
-	for _, file := range allFiles {
-		if !strings.Contains(file.Name(), filename) {
-			continue
-		}
-
-		infoFilePath := trashBase + "/info/" + file.Name() + ".trashinfo"
-		filesFilePath := trashBase + "/files/" + file.Name()
-
-		fl = addMatchedFileList(fl, infoFilePath, filesFilePath)
-	}
-	var id int
-	if len(fl) > 1 {
-		fmt.Println("ID\t DateDeleted\t\t FileSize\t Path")
-		for i, v := range fl {
-			fmt.Printf("%d\t %s\t %d\t\t %s\t\n", i, v.dateDelete, v.size, v.originalPath)
-		}
-
-		fmt.Printf("Which one do you want to restore[ID] ? > ")
-		scanner := bufio.NewScanner(os.Stdin)
-		scanner.Scan()
-		id, _ = strconv.Atoi(scanner.Text())
-		unDelete(uint(id), fl, outputPath)
-	} else if len(fl) == 1 {
-		unDelete(uint(0), fl, outputPath)
-	} else {
-		return fmt.Errorf("No such file or director")
+	// /info/ file is still in the trash box. So deleted it.
+	err = os.Remove(infoFilePath)
+	if err != nil {
+		return err
 	}
 
 	return nil
